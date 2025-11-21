@@ -66,21 +66,21 @@ Este projeto implementa um sistema modular e automatizado para deployment de Act
 
 ## Estrutura do Projeto
 
-📁 PsScripts/
-├── 📄 Deploy.ps1                    (Script Principal)
-├── 📄 Deploy-AutoContinue.ps1       (Automação Pós-Reboot)
-├── 📄 Deploy-Part2.ps1              (Configuração Pós-Instalação)
-├── 📁 Functions/
-│   ├── 📄 Logging.ps1               (Sistema de Log)
-│   ├── 📄 Validation.ps1            (Validadores)
-│   ├── 📄 StateManagement.ps1       (Gerenciamento de Estado)
-│   └── 📄 Utilities.ps1             (Funções Auxiliares)
+📁 PsScripts/ <br>
+├── 📄 Deploy.ps1 &emsp; &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;(Script Principal)
+├── 📄 Deploy-AutoContinue.ps1 &emsp;(Automação Pós-Reboot) 
+├── 📄 Deploy-Part2.ps1&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;(Configuração Pós-Instalação) 
+├── 📁 Functions/ 
+│   ├── 📄 Logging.ps1&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;(Sistema de Log) 
+│   ├── 📄 Validation.ps1&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;(Validadores) 
+│   ├── 📄 StateManagement.ps1&emsp;&emsp;(Gerenciamento de Estado)
+│   └── 📄 Utilities.ps1&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;(Funções Auxiliares) 
 ├── 📁 Config/
-│   ├── 📄 Default.psd1              (Configuração Padrão)
-│   ├── 📄 Test.psd1                 (Ambiente de Teste)
-│   └── 📄 Production.psd1           (Ambiente Produção)
+│   ├── 📄 Default.psd1&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;(Configuração Padrão) 
+│   ├── 📄 Test.psd1&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;(Ambiente de Teste)
+│   └── 📄 Production.psd1&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;(Ambiente Produção)
 └── 📁 Logs/
-    └── 📄 ADDeployment_*.log        (Arquivos de Log)
+    └── 📄 ADDeployment_*.log&emsp;&emsp;&emsp;&emsp;(Arquivos de Log)
 
 ---
 
