@@ -120,8 +120,13 @@ Get-Content -Path "C:\PSScript\Logs\ADDeployment_*.log" -Tail 50
 # Verificar estado
 Get-Content -Path "C:\PSScript\Logs\ADDeployment.state"
 
+<<<<<<< HEAD
 
 ---
 
 **Última Atualização:** 20/11/2025  
 **Status:** Em desenvolvimento
+=======
+Última Atualização: 20/11/2025
+Status: Em desenvolvimento
+>>>>>>> adf378d5ea38e1873aebc342bd9a9fe30d330665
