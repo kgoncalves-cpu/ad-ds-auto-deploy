@@ -1,0 +1,5 @@
+Copyright (c) 2025 | KG - BLUTEK, Tecnologia em Sistemas de Informação Ltda.
+Todos os direitos reservados.
+
+Este software é confidencial e destinado apenas para uso interno da organização [Nome].
+Nenhuma parte deste código pode ser copiada, modificada, distribuída ou utilizada sem autorização expressa por escrito do autor.
