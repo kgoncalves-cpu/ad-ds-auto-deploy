@@ -26,7 +26,7 @@
     
 .NOTES
     Autor: BRMC IT Team
-    Versão: 2.1 com Automação
+    Versão: 2.2 com Correção de CIDR
     Requer: Windows Server 2022
 #>
 
@@ -47,8 +47,8 @@ $ProgressPreference = "SilentlyContinue"
 $autoContinueStatus = if ($AutoContinue) { 'Ativo' } else { 'Inativo' }
 
 Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║  DEPLOYMENT DE ACTIVE DIRECTORY - VERSÃO 2.1 MODULAR       ║" -ForegroundColor Cyan
-Write-Host "║  Modo: $Mode | AutoContinue: $autoContinueStatus            ║" -ForegroundColor Cyan
+Write-Host "║  DEPLOYMENT DE ACTIVE DIRECTORY - VERSÃO 2.2 CORRIGIDA     ║" -ForegroundColor Cyan
+Write-Host "║  Modo: $Mode | AutoContinue: $autoContinueStatus           ║" -ForegroundColor Cyan
 Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 
 # =====================================================
@@ -97,7 +97,7 @@ $statePath = "$PSScriptRoot\Logs\ADDeployment.state"
 try {
     $logger = [ADLogger]::new($logPath, $true, $true)
     $logger.Info("═══════════════════════════════════════════════════════════")
-    $logger.Info("DEPLOYMENT DE ACTIVE DIRECTORY - VERSÃO 2.1 MODULAR")
+    $logger.Info("DEPLOYMENT DE ACTIVE DIRECTORY - VERSÃO 2.2 CORRIGIDA")
     $logger.Info("Modo: $Mode | AutoContinue: $autoContinueStatus")
     $logger.Info("═══════════════════════════════════════════════════════════")
     Write-Host "Logger inicializado" -ForegroundColor Green
@@ -160,6 +160,8 @@ Write-Host "Domínio: $($config.Domain.Name)" -ForegroundColor Gray
 Write-Host "NetBIOS: $($config.Domain.NetBIOS)" -ForegroundColor Gray
 Write-Host "Servidor: $($config.Server.Name)" -ForegroundColor Gray
 Write-Host "IP: $($config.Network.ServerIP)" -ForegroundColor Gray
+Write-Host "CIDR: $($config.Network.Segments[0].CIDR)" -ForegroundColor Gray
+Write-Host "Máscara: $($config.Network.Segments[0].Mask)" -ForegroundColor Gray
 Write-Host "DHCP: $(if($config.Services.InstallDHCP){'Sim'}else{'Não'})" -ForegroundColor Gray
 
 # =====================================================
@@ -186,6 +188,25 @@ if ($currentPhase -eq 0) {
             }
         }
         Write-Host "Rede válida" -ForegroundColor Green
+        
+        #NOVA VALIDAÇÃO: Verificar consistência entre CIDR e Máscara
+        Write-Host "`nValidando consistência entre CIDR e máscara..." -ForegroundColor Yellow
+        
+        foreach ($segment in $config.Network.Segments) {
+            $calculatedMask = [ADValidator]::ConvertCIDRToMask($segment.CIDR)
+            
+            if ([string]::IsNullOrEmpty($calculatedMask)) {
+                throw "CIDR inválido: $($segment.CIDR). Deve estar entre 0 e 32"
+            }
+            
+            if ($calculatedMask -ne $segment.Mask) {
+                $logger.Warning("Inconsistência detectada: CIDR $($segment.CIDR) deveria gerar máscara $calculatedMask, mas config contém $($segment.Mask)")
+                Write-Host "Aviso: Máscara de config será substituída pela calculada" -ForegroundColor Yellow
+                $segment.Mask = $calculatedMask
+            }
+        }
+        
+        Write-Host "Validação de CIDR/Máscara concluída" -ForegroundColor Green
         
     } catch {
         $logger.Error("Erro na validação: $_")
@@ -253,22 +274,31 @@ if ($currentPhase -eq 0) {
                 Join-Path -Path $PSScriptRoot -ChildPath $configPath
             }
             
-            # Criar ação PowerShell direta
+            # Caminho do executor (wrapper)
+            $taskExecutorPath = Join-Path -Path $PSScriptRoot -ChildPath "Functions\TaskExecutor.ps1"
+            
+            $logger.Info("Caminhos da tarefa:")
+            $logger.Info("  Executor: $taskExecutorPath")
+            $logger.Info("  Script: $scriptPathAbsolute")
+            $logger.Info("  Config: $configPathAbsolute")
+            
+            # ✅ Criar ação PowerShell com executor wrapper - COM JANELA VISÍVEL
             $action = New-ScheduledTaskAction `
                 -Execute "powershell.exe" `
-                -Argument "-ExecutionPolicy Bypass -NoProfile -NoExit -File `"$scriptPathAbsolute`" -ConfigFile `"$configPathAbsolute`" -Mode $Mode -AutoContinue"
+                -Argument "-ExecutionPolicy Bypass -NoProfile -NoExit -File `"$taskExecutorPath`" -ScriptPath `"$scriptPathAbsolute`" -ConfigPath `"$configPathAbsolute`" -Mode `"$Mode`" -AutoContinue"
             
-            # Criar trigger para executar no logon
-            $trigger = New-ScheduledTaskTrigger -AtLogOn
+            # Criar trigger para executar no logon (com delay)
+            $trigger = New-ScheduledTaskTrigger -AtLogOn -RandomDelay (New-TimeSpan -Seconds 30)
             
-            # Criar configurações
+            # ✅ CONFIGURAÇÕES CORRIGIDAS PARA MOSTRAR JANELA
             $settings = New-ScheduledTaskSettingsSet `
                 -AllowStartIfOnBatteries `
                 -DontStopIfGoingOnBatteries `
                 -StartWhenAvailable `
-                -MultipleInstances IgnoreNew
+                -MultipleInstances IgnoreNew `
+                -ExecutionTimeLimit (New-TimeSpan -Hours 2)
             
-            # Registrar tarefa
+            # ✅ Registrar tarefa
             Register-ScheduledTask `
                 -TaskName $taskName `
                 -TaskPath $taskPath `
@@ -276,16 +306,29 @@ if ($currentPhase -eq 0) {
                 -Trigger $trigger `
                 -Settings $settings `
                 -RunLevel Highest `
-                -User "NT AUTHORITY\SYSTEM" `
                 -Force `
                 -ErrorAction Stop
             
-            $logger.Info("Task Scheduler registrada com sucesso: $taskPath$taskName")
-            Write-Host "Tarefa de automação criada no Task Scheduler" -ForegroundColor Green
-            Write-Host "  Executor: powershell.exe" -ForegroundColor Gray
-            Write-Host "  Script: $scriptPathAbsolute" -ForegroundColor Gray
-            Write-Host "  Config: $configPathAbsolute" -ForegroundColor Gray
+            # ✅ Aguardar registro
+            Start-Sleep -Seconds 2
             
+            # ✅ Recuperar a tarefa já criada
+            $task = Get-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction SilentlyContinue
+            
+            if ($null -ne $task) {
+                $logger.Info("Tarefa registrada com sucesso")
+                Write-Host "Tarefa de automação criada com sucesso" -ForegroundColor Green
+                
+                # ✅ INFORMAÇÕES FINAIS
+                $logger.Info("Task Scheduler Details:")
+                $logger.Info("  Nome: $taskName")
+                $logger.Info("  Caminho: $taskPath")
+                $logger.Info("  Executor: powershell.exe")
+                $logger.Info("  Trigger: AtLogOn com delay de 30 segundos")
+                Write-Host "`n✅ Tarefa será executada automaticamente após o próximo logon" -ForegroundColor Green
+            } else {
+                throw "Falha ao verificar tarefa após registro"
+            }
         } catch {
             $logger.Warning("Erro ao criar Task Scheduler: $_")
             Write-Host "Aviso: Task Scheduler pode não ter sido criada corretamente." -ForegroundColor Yellow
@@ -299,6 +342,7 @@ if ($currentPhase -eq 0) {
 
 Write-Host "`nContinuando com a implementação..." -ForegroundColor White
 Start-Sleep -Seconds 2
+
 # =====================================================
 # FASE 2: PREPARAÇÃO DO SERVIDOR
 # =====================================================
@@ -365,11 +409,23 @@ try {
     Remove-NetIPAddress -InterfaceIndex $adapter.ifIndex -Confirm:$false -ErrorAction SilentlyContinue
     Remove-NetRoute -InterfaceIndex $adapter.ifIndex -Confirm:$false -ErrorAction SilentlyContinue
     
-    # ❌ PROBLEMA: Aqui está pegando o CIDR do config
+    # ✅ CORREÇÃO: Garantir que CIDR é válido antes de usar
     $segment = $config.Network.Segments[0]
-    $prefixLength = $segment.CIDR      # ← Pega de config (20)
+    $prefixLength = $segment.CIDR
+    
+    # Validar que o CIDR está entre 0-32
+    if ($prefixLength -lt 0 -or $prefixLength -gt 32) {
+        throw "CIDR inválido: $prefixLength. Deve estar entre 0 e 32"
+    }
+    
     $gateway = $segment.Gateway
     $dnsServers = @($config.Network.PrimaryDNS, $config.Network.SecondaryDNS)
+    
+    $logger.Info("Configurações de rede:")
+    $logger.Info("  IP: $($config.Network.ServerIP)")
+    $logger.Info("  CIDR/PrefixLength: $prefixLength")
+    $logger.Info("  Máscara: $($segment.Mask)")
+    $logger.Info("  Gateway: $gateway")
     
     New-NetIPAddress -InterfaceIndex $adapter.ifIndex `
                     -IPAddress $config.Network.ServerIP `
@@ -379,8 +435,41 @@ try {
     Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex `
                                -ServerAddresses $dnsServers -ErrorAction Stop
     
+    # ✅ VALIDAÇÃO PÓS-APLICAÇÃO: Verificar se foi aplicado corretamente
+    Write-Host "`nValidando configuração de IP aplicada..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 2
+    
+    $appliedIP = Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+    
+    if ($appliedIP.IPAddress -eq $config.Network.ServerIP) {
+        $logger.Success("IP aplicado corretamente: $($appliedIP.IPAddress)/$($appliedIP.PrefixLength)")
+        Write-Host "IP aplicado corretamente: $($appliedIP.IPAddress)/$($appliedIP.PrefixLength)" -ForegroundColor Green
+        
+        # ✅ Verificar se o PrefixLength está correto
+        if ($appliedIP.PrefixLength -ne $prefixLength) {
+            $logger.Warning("AVISO: PrefixLength foi alterado pelo Windows!")
+            $logger.Warning("  Esperado: $prefixLength")
+            $logger.Warning("  Aplicado: $($appliedIP.PrefixLength)")
+            Write-Host "AVISO: PrefixLength alterado! Esperado: $prefixLength, Aplicado: $($appliedIP.PrefixLength)" -ForegroundColor Red
+            
+            # Tentar corrigir se foi alterado
+            if ($appliedIP.PrefixLength -ne $prefixLength) {
+                Write-Host "Tentando corrigir PrefixLength..." -ForegroundColor Yellow
+                Remove-NetIPAddress -IPAddress $config.Network.ServerIP -Confirm:$false -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 1
+                New-NetIPAddress -InterfaceIndex $adapter.ifIndex `
+                                -IPAddress $config.Network.ServerIP `
+                                -PrefixLength $prefixLength `
+                                -DefaultGateway $gateway -ErrorAction Stop
+                $logger.Info("PrefixLength reconfigurado")
+            }
+        }
+    } else {
+        throw "IP não foi aplicado corretamente. Esperado: $($config.Network.ServerIP), Obtido: $($appliedIP.IPAddress)"
+    }
+    
     $logger.Success("IP estático configurado: $($config.Network.ServerIP)/$prefixLength")
-    Write-Host "IP estático configurado" -ForegroundColor Green
+    Write-Host "IP estático configurado com sucesso" -ForegroundColor Green
     
     $state.SetPhase(2)
     
@@ -414,13 +503,34 @@ try {
     
     # Instalar recursos
     Write-Host "`nInstalando recursos AD-Domain-Services..." -ForegroundColor Yellow
+    Write-Host "Aguarde, este processo pode levar alguns minutos..." -ForegroundColor Gray
     $logger.Info("Iniciando instalação de AD-Domain-Services")
     
-    Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -ErrorAction Stop
+    # ✅ CORRETO: Sem -NoRestart (não existe), sem -Restart (você quer controlar reboots)
+    $installResult = Install-WindowsFeature `
+        -Name AD-Domain-Services `
+        -IncludeManagementTools `
+        -ErrorAction Stop
     
-    $logger.Success("AD-Domain-Services instalado")
-    Write-Host "AD-Domain-Services instalado" -ForegroundColor Green
-    $state.MarkADInstalled()
+    Write-Host ""
+    
+    if ($installResult.Success) {
+        $logger.Success("AD-Domain-Services instalado com sucesso")
+        Write-Host "✅ AD-Domain-Services instalado com sucesso" -ForegroundColor Green
+        
+        # ✅ Verificar se reboot é necessário
+        if ($installResult.RestartNeeded -eq "Yes") {
+            $logger.Warning("Reboot necessário para completar instalação")
+            Write-Host "⚠️  Reboot será necessário após próxima etapa" -ForegroundColor Yellow
+        }
+        
+        Write-Host "Próxima etapa: Configuração DSRM" -ForegroundColor Yellow
+        $state.MarkADInstalled()
+    } else {
+        $logger.Error("Falha na instalação: $($installResult.ExitCode)")
+        Write-Host "❌ Falha na instalação" -ForegroundColor Red
+        throw "Install-WindowsFeature falhou com código: $($installResult.ExitCode)"
+    }
     
     # Solicitar senha DSRM
     Write-Host "`nConfigurando senha DSRM..." -ForegroundColor Yellow
@@ -465,7 +575,6 @@ try {
         -ForestMode $config.Advanced.ForestMode `
         -DomainMode $config.Advanced.DomainMode `
         -InstallDns:$true `
-        -CreateDnsDelegation:$false `
         -SafeModeAdministratorPassword $dsrmPassword `
         -Force:$true `
         -NoRebootOnCompletion:$false
@@ -513,7 +622,7 @@ Write-Host "  Network.Segments[0].CIDR: $($config.Network.Segments[0].CIDR)" -Fo
 Write-Host "  Network.Segments[0].Mask: $($config.Network.Segments[0].Mask)" -ForegroundColor Gray
 Write-Host "  Network.ServerIP: $($config.Network.ServerIP)" -ForegroundColor Gray
 
-$logger.Info("[DEBUG] Valores de configuração:")
+$logger.Info("[DEBUG] Valores de configuração finais:")
 $logger.Info("  Network.Segments[0].Network: $($config.Network.Segments[0].Network)")
 $logger.Info("  Network.Segments[0].CIDR: $($config.Network.Segments[0].CIDR)")
 $logger.Info("  Network.Segments[0].Mask: $($config.Network.Segments[0].Mask)")
