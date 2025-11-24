@@ -57,7 +57,6 @@ Este projeto implementa um sistema modular e automatizado para deployment de Act
 
 ### 4. Automação Completa
 - Execução totalmente autônoma para ambientes de produção.
-- Configuração de senhas diretamente no arquivo de configuração.
 
 ### 5. Documentação Completa
 - Documentação detalhada da estrutura de diretórios, fluxo de execução, configuração de ambiente e troubleshooting.
