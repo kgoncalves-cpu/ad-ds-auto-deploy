@@ -365,3 +365,4 @@ FodyWeavers.xsd
 # Project-specific ignores
 Junk/
 Config/Default.psd1
+/Deploy_val.txt
