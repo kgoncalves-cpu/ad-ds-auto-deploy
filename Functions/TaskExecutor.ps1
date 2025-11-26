@@ -16,7 +16,7 @@ param(
 )
 
 Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║  RETOMANDO DEPLOYMENT - EXECUTOR DE TAREFA                 ║" -ForegroundColor Cyan
+Write-Host "║  RETOMANDO DEPLOYMENT - EXECUTOR DE TAREFAS                ║" -ForegroundColor Cyan
 Write-Host "║  Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')      ║" -ForegroundColor Cyan
 Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 

@@ -66,14 +66,6 @@ try {
 }
 
 try {
-    . "$PSScriptRoot\Functions\Validation.ps1" -ErrorAction Stop
-    Write-Host "Validation.ps1 carregado" -ForegroundColor Green
-} catch {
-    Write-Host "Erro ao carregar Validation.ps1: $_" -ForegroundColor Red
-    exit 1
-}
-
-try {
     . "$PSScriptRoot\Functions\StateManagement.ps1" -ErrorAction Stop
     Write-Host "StateManagement.ps1 carregado" -ForegroundColor Green
 } catch {
@@ -132,19 +124,59 @@ if ($effectiveMode -eq "Automated") {
 }
 
 # =====================================================
-# CARREGAR CONFIGURAÇÃO
+# CARREGAR MÓDULOS
+# =====================================================
+
+Write-Host "`nCarregando módulos..." -ForegroundColor Yellow
+# ADDeployment.Config
+try {
+    Import-Module "$PSScriptRoot\Modules\ADDeployment.Config.psm1" -ErrorAction Stop
+    Write-Host "ADDeployment.Config carregado" -ForegroundColor Green
+} catch {
+    Write-Host "Erro ao carregar ADDeployment.Config: $_" -ForegroundColor Red
+    exit 1
+}
+# ADDeployment.Validate
+try {
+    Import-Module "$PSScriptRoot\Modules\ADDeployment.Validate.psm1" -ErrorAction Stop
+    Write-Host "ADDeployment.Validate carregado" -ForegroundColor Green
+} catch {
+    Write-Host "Erro ao carregar ADDeployment.Validate: $_" -ForegroundColor Red
+    exit 1
+}
+# ADDeployment.Setup
+try {
+    Import-Module "$PSScriptRoot\Modules\ADDeployment.Setup.psm1" -ErrorAction Stop
+    Write-Host "ADDeployment.Setup carregado" -ForegroundColor Green
+} catch {
+    Write-Host "Erro ao carregar ADDeployment.Setup: $_" -ForegroundColor Red
+    exit 1
+}
+# ADDeployment.Install
+try {
+    Import-Module "$PSScriptRoot\Modules\ADDeployment.Install.psm1" -ErrorAction Stop
+    Write-Host "ADDeployment.Install carregado" -ForegroundColor Green
+} catch {
+    Write-Host "Erro ao carregar ADDeployment.Install: $_" -ForegroundColor Red
+    exit 1
+}
+
+# =====================================================
+# CARREGAR CONFIGURAÇÃO (NOVO FLUXO)
 # =====================================================
 
 Write-Host "`nCarregando configuração..." -ForegroundColor Yellow
 
 try {
-    if (-not (Test-Path $ConfigFile)) {
-        throw "Arquivo de configuração não encontrado: $ConfigFile"
-    }
+    # Carregar config via módulo
+    $config = Import-ADConfig -ConfigFile $ConfigFile -Logger $logger
     
-    $config = Import-PowerShellDataFile -Path $ConfigFile
-    $logger.Success("Configuração carregada: $ConfigFile")
-    Write-Host "Configuração carregada com sucesso" -ForegroundColor Green
+    # Validar estrutura
+    Test-ADConfigStructure -Config $config -Logger $logger
+    
+    # Exibir configuração
+    Show-ADConfig -Config $config -Logger $logger
+    
 } catch {
     $logger.Error("Erro ao carregar configuração: $_")
     Write-Host "Erro: $_" -ForegroundColor Red
@@ -152,86 +184,31 @@ try {
 }
 
 # =====================================================
-# EXIBIR CONFIGURAÇÃO
+# DETERMINAR MODO DE EXECUÇÃO (ATUALIZADO)
 # =====================================================
 
-Write-Host "`nConfigração Carregada:" -ForegroundColor Yellow
-Write-Host "Domínio: $($config.Domain.Name)" -ForegroundColor Gray
-Write-Host "NetBIOS: $($config.Domain.NetBIOS)" -ForegroundColor Gray
-Write-Host "Servidor: $($config.Server.Name)" -ForegroundColor Gray
-Write-Host "IP: $($config.Network.ServerIP)" -ForegroundColor Gray
-Write-Host "CIDR: $($config.Network.Segments[0].CIDR)" -ForegroundColor Gray
-Write-Host "Máscara: $($config.Network.Segments[0].Mask)" -ForegroundColor Gray
-Write-Host "DHCP: $(if($config.Services.InstallDHCP){'Sim'}else{'Não'})" -ForegroundColor Gray
+$effectiveMode = Get-ADExecutionMode -Mode $Mode -AutoContinue $AutoContinue -Logger $logger
 
 # =====================================================
 # VALIDAÇÕES (APENAS NA PRIMEIRA EXECUÇÃO)
 # =====================================================
-
 if ($currentPhase -eq 0) {
-    Write-Host "`nValidando configuração..." -ForegroundColor Yellow
-    
     try {
-        if (-not [ADValidator]::ValidateDomainName($config.Domain.Name)) {
-            throw "Nome de domínio inválido: $($config.Domain.Name)"
+        # Validar configuração via módulo
+        Invoke-ADConfigValidation -Config $config -Logger $logger
+        
+        # Obter confirmação do usuário
+        $confirmed = Get-ADDeploymentConfirmation -Config $config -EffectiveMode $effectiveMode -Logger $logger
+        
+        if (-not $confirmed) {
+            Write-Host "`nOperação cancelada" -ForegroundColor Yellow
+            exit 0
         }
-        Write-Host "Domínio válido" -ForegroundColor Green
-        
-        if (-not [ADValidator]::ValidateIPAddress($config.Network.ServerIP)) {
-            throw "IP do servidor inválido: $($config.Network.ServerIP)"
-        }
-        Write-Host "IP válido" -ForegroundColor Green
-        
-        foreach ($segment in $config.Network.Segments) {
-            if (-not [ADValidator]::ValidateIPAddress($segment.Network)) {
-                throw "IP de rede inválido: $($segment.Network)"
-            }
-        }
-        Write-Host "Rede válida" -ForegroundColor Green
-        
-        #NOVA VALIDAÇÃO: Verificar consistência entre CIDR e Máscara
-        Write-Host "`nValidando consistência entre CIDR e máscara..." -ForegroundColor Yellow
-        
-        foreach ($segment in $config.Network.Segments) {
-            $calculatedMask = [ADValidator]::ConvertCIDRToMask($segment.CIDR)
-            
-            if ([string]::IsNullOrEmpty($calculatedMask)) {
-                throw "CIDR inválido: $($segment.CIDR). Deve estar entre 0 e 32"
-            }
-            
-            if ($calculatedMask -ne $segment.Mask) {
-                $logger.Warning("Inconsistência detectada: CIDR $($segment.CIDR) deveria gerar máscara $calculatedMask, mas config contém $($segment.Mask)")
-                Write-Host "Aviso: Máscara de config será substituída pela calculada" -ForegroundColor Yellow
-                $segment.Mask = $calculatedMask
-            }
-        }
-        
-        Write-Host "Validação de CIDR/Máscara concluída" -ForegroundColor Green
         
     } catch {
         $logger.Error("Erro na validação: $_")
         Write-Host "Erro: $_" -ForegroundColor Red
         exit 1
-    }
-    
-    # ================================================
-    # CONFIRMAÇÃO (APENAS PRIMEIRA EXECUÇÃO)
-    # ================================================
-    
-    if ($effectiveMode -eq "Interactive") {
-        Write-Host ("`n" + ("=" * 64)) -ForegroundColor Cyan
-        $response = Read-Host "Deseja continuar com a implementação? (S/N)"
-        
-        if ($response -ne 'S' -and $response -ne 's') {
-            $logger.Warning("Implementação cancelada pelo usuário")
-            Write-Host "`nOperação cancelada" -ForegroundColor Yellow
-            exit 0
-        }
-    } else {
-        Write-Host ("`n" + ("=" * 64)) -ForegroundColor Cyan
-        Write-Host "Modo AUTOMÁTICO - continuando sem confirmação..." -ForegroundColor Green
-        $logger.Info("Modo automático: continuando sem prompt de usuário")
-        Start-Sleep -Seconds 3
     }
     
     # Se modo AutoContinue, criar tarefa agendada
@@ -347,249 +324,40 @@ Start-Sleep -Seconds 2
 # FASE 2: PREPARAÇÃO DO SERVIDOR
 # =====================================================
 
-Write-Host "`n" + ("=" * 64) -ForegroundColor Cyan
-Write-Host "FASE 2: PREPARAÇÃO DO SERVIDOR" -ForegroundColor Yellow
-Write-Host ("=" * 64) -ForegroundColor Cyan
-
-$logger.Info("Iniciando Fase 2: Preparação do Servidor")
-
 try {
-    # 2.1 - Renomear servidor
-    if ($env:COMPUTERNAME -ne $config.Server.Name) {
-        Write-Host "`nRenomeando servidor..." -ForegroundColor Yellow
-        $logger.Info("Renomeando servidor de $($env:COMPUTERNAME) para $($config.Server.Name)")
-        
-        Rename-Computer -NewName $config.Server.Name -Force -ErrorAction Stop
-        $logger.Success("Servidor renomeado com sucesso")
-        Write-Host "Servidor renomeado: $($config.Server.Name)" -ForegroundColor Green
-        
-        $state.MarkRenameApplied()
-        
-        Write-Host "`n" + ("=" * 64) -ForegroundColor Red
-        Write-Host "REBOOT OBRIGATÓRIO #1 - RENAME DO SERVIDOR" -ForegroundColor Red
-        Write-Host ("=" * 64) -ForegroundColor Red
-        
-        Write-Host "`nO Windows exige um reboot para aplicar a mudança de nome" -ForegroundColor White
-
-        $rebootChoice = if ($effectiveMode -eq "Interactive") {
-            Read-Host "`nDeseja reiniciar agora? (S/N)"
-        } else {
-            Write-Host "`nModo AUTOMÁTICO: Reiniciando automaticamente em 10 segundos..." -ForegroundColor Yellow
-            $logger.Info("Reboot automático em 10 segundos (modo automático)")
-            "S"  # Simula "Sim"
-        }
-        
-        if ($rebootChoice -eq 'S' -or $rebootChoice -eq 's') {
-            $logger.Info("Iniciando reboot #1 em 10 segundos")
-            Write-Host "`nServidor será reiniciado em 10 segundos..." -ForegroundColor Yellow
-            Start-Sleep -Seconds 10
-            Restart-Computer -Force
-        } else {
-            Write-Host "`nReinicie manualmente o servidor para continuar" -ForegroundColor Yellow
-            $logger.Warning("Reboot adiado pelo usuário")
-            exit 0
-        }
-        exit 0
-    } else {
-        $logger.Info("Servidor já possui o nome correto: $($config.Server.Name)")
-        Write-Host "Servidor já possui o nome correto: $($config.Server.Name)" -ForegroundColor Green
-        $state.MarkRenameApplied()
+    $setupResult = Invoke-ADServerSetup -Config $config `
+                                       -Logger $logger `
+                                       -State $state `
+                                       -EffectiveMode $effectiveMode
+    
+    if (-not $setupResult.Success) {
+        throw $setupResult.Message
     }
-    
-    # 2.2 - Configurar IP estático (APÓS rename ter sido aplicado)
-    Write-Host "`nConfigurando IP estático..." -ForegroundColor Yellow
-    $logger.Info("Configurando IP estático: $($config.Network.ServerIP)")
-    
-    $adapter = Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1
-    
-    if ($null -eq $adapter) {
-        throw "Nenhum adaptador de rede ativo encontrado"
-    }
-    
-    Remove-NetIPAddress -InterfaceIndex $adapter.ifIndex -Confirm:$false -ErrorAction SilentlyContinue
-    Remove-NetRoute -InterfaceIndex $adapter.ifIndex -Confirm:$false -ErrorAction SilentlyContinue
-    
-    # ✅ CORREÇÃO: Garantir que CIDR é válido antes de usar
-    $segment = $config.Network.Segments[0]
-    $prefixLength = $segment.CIDR
-    
-    # Validar que o CIDR está entre 0-32
-    if ($prefixLength -lt 0 -or $prefixLength -gt 32) {
-        throw "CIDR inválido: $prefixLength. Deve estar entre 0 e 32"
-    }
-    
-    $gateway = $segment.Gateway
-    $dnsServers = @($config.Network.PrimaryDNS, $config.Network.SecondaryDNS)
-    
-    $logger.Info("Configurações de rede:")
-    $logger.Info("  IP: $($config.Network.ServerIP)")
-    $logger.Info("  CIDR/PrefixLength: $prefixLength")
-    $logger.Info("  Máscara: $($segment.Mask)")
-    $logger.Info("  Gateway: $gateway")
-    
-    New-NetIPAddress -InterfaceIndex $adapter.ifIndex `
-                    -IPAddress $config.Network.ServerIP `
-                    -PrefixLength $prefixLength `
-                    -DefaultGateway $gateway -ErrorAction Stop
-    
-    Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex `
-                               -ServerAddresses $dnsServers -ErrorAction Stop
-    
-    # ✅ VALIDAÇÃO PÓS-APLICAÇÃO: Verificar se foi aplicado corretamente
-    Write-Host "`nValidando configuração de IP aplicada..." -ForegroundColor Yellow
-    Start-Sleep -Seconds 2
-    
-    $appliedIP = Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
-    
-    if ($appliedIP.IPAddress -eq $config.Network.ServerIP) {
-        $logger.Success("IP aplicado corretamente: $($appliedIP.IPAddress)/$($appliedIP.PrefixLength)")
-        Write-Host "IP aplicado corretamente: $($appliedIP.IPAddress)/$($appliedIP.PrefixLength)" -ForegroundColor Green
-        
-        # ✅ Verificar se o PrefixLength está correto
-        if ($appliedIP.PrefixLength -ne $prefixLength) {
-            $logger.Warning("AVISO: PrefixLength foi alterado pelo Windows!")
-            $logger.Warning("  Esperado: $prefixLength")
-            $logger.Warning("  Aplicado: $($appliedIP.PrefixLength)")
-            Write-Host "AVISO: PrefixLength alterado! Esperado: $prefixLength, Aplicado: $($appliedIP.PrefixLength)" -ForegroundColor Red
-            
-            # Tentar corrigir se foi alterado
-            if ($appliedIP.PrefixLength -ne $prefixLength) {
-                Write-Host "Tentando corrigir PrefixLength..." -ForegroundColor Yellow
-                Remove-NetIPAddress -IPAddress $config.Network.ServerIP -Confirm:$false -ErrorAction SilentlyContinue
-                Start-Sleep -Seconds 1
-                New-NetIPAddress -InterfaceIndex $adapter.ifIndex `
-                                -IPAddress $config.Network.ServerIP `
-                                -PrefixLength $prefixLength `
-                                -DefaultGateway $gateway -ErrorAction Stop
-                $logger.Info("PrefixLength reconfigurado")
-            }
-        }
-    } else {
-        throw "IP não foi aplicado corretamente. Esperado: $($config.Network.ServerIP), Obtido: $($appliedIP.IPAddress)"
-    }
-    
-    $logger.Success("IP estático configurado: $($config.Network.ServerIP)/$prefixLength")
-    Write-Host "IP estático configurado com sucesso" -ForegroundColor Green
-    
-    $state.SetPhase(2)
     
 } catch {
     $logger.Error("Erro na Fase 2: $_")
     Write-Host "Erro: $_" -ForegroundColor Red
     exit 1
 }
-
 # =====================================================
 # FASE 3: INSTALAÇÃO DO ACTIVE DIRECTORY
 # =====================================================
 
-Write-Host "`n" + ("=" * 64) -ForegroundColor Cyan
-Write-Host "FASE 3: INSTALAÇÃO DO ACTIVE DIRECTORY" -ForegroundColor Yellow
-Write-Host ("=" * 64) -ForegroundColor Cyan
-
-$logger.Info("Iniciando Fase 3: Instalação do Active Directory")
-
 try {
-    # Verificar nome do servidor
-    Write-Host "`nVerificando nome do servidor..." -ForegroundColor Yellow
-    Write-Host "Nome atual: $env:COMPUTERNAME" -ForegroundColor Gray
+    $installResult = Invoke-ADInstallation -Config $config `
+                                          -Logger $logger `
+                                          -State $state `
+                                          -EffectiveMode $effectiveMode
     
-    if ($env:COMPUTERNAME -ne $config.Server.Name) {
-        throw "Nome do servidor ainda não foi aplicado. Reinicie manualmente."
+    if (-not $installResult.Success) {
+        throw $installResult.Message
     }
-    
-    $logger.Info("Nome do servidor confirmado: $env:COMPUTERNAME")
-    Write-Host "Nome do servidor confirmado" -ForegroundColor Green
-    
-    # Instalar recursos
-    Write-Host "`nInstalando recursos AD-Domain-Services..." -ForegroundColor Yellow
-    Write-Host "Aguarde, este processo pode levar alguns minutos..." -ForegroundColor Gray
-    $logger.Info("Iniciando instalação de AD-Domain-Services")
-    
-    # ✅ CORRETO: Sem -NoRestart (não existe), sem -Restart (você quer controlar reboots)
-    $installResult = Install-WindowsFeature `
-        -Name AD-Domain-Services `
-        -IncludeManagementTools `
-        -ErrorAction Stop
-    
-    Write-Host ""
-    
-    if ($installResult.Success) {
-        $logger.Success("AD-Domain-Services instalado com sucesso")
-        Write-Host "✅ AD-Domain-Services instalado com sucesso" -ForegroundColor Green
-        
-        # ✅ Verificar se reboot é necessário
-        if ($installResult.RestartNeeded -eq "Yes") {
-            $logger.Warning("Reboot necessário para completar instalação")
-            Write-Host "⚠️  Reboot será necessário após próxima etapa" -ForegroundColor Yellow
-        }
-        
-        Write-Host "Próxima etapa: Configuração DSRM" -ForegroundColor Yellow
-        $state.MarkADInstalled()
-    } else {
-        $logger.Error("Falha na instalação: $($installResult.ExitCode)")
-        Write-Host "❌ Falha na instalação" -ForegroundColor Red
-        throw "Install-WindowsFeature falhou com código: $($installResult.ExitCode)"
-    }
-    
-    # Solicitar senha DSRM
-    Write-Host "`nConfigurando senha DSRM..." -ForegroundColor Yellow
-    
-    if ([string]::IsNullOrWhiteSpace($config.Passwords.DSRM)) {
-        if ($effectiveMode -eq "Interactive") {
-            do {
-                $dsrmPassword = Read-Host "Digite a senha DSRM (mínimo 8 caracteres)" -AsSecureString
-                $dsrmPasswordConfirm = Read-Host "Confirme a senha DSRM" -AsSecureString
-                
-                $dsrmPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($dsrmPassword))
-                $dsrmConfirmPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($dsrmPasswordConfirm))
-                
-                if ($dsrmPlain -ne $dsrmConfirmPlain) {
-                    Write-Host "As senhas não coincidem" -ForegroundColor Yellow
-                } elseif ($dsrmPlain.Length -lt 8) {
-                    Write-Host "A senha deve ter no mínimo 8 caracteres" -ForegroundColor Yellow
-                }
-            } while ($dsrmPlain -ne $dsrmConfirmPlain -or $dsrmPlain.Length -lt 8)
-        } else {
-            $logger.Error("ERRO: Modo automático requer senha DSRM configurada em Config")
-            Write-Host "ERRO: Senha DSRM não configurada para modo automático" -ForegroundColor Red
-            Write-Host "Configure 'Passwords.DSRM' em Config\Default.psd1" -ForegroundColor Yellow
-            exit 1
-        }
-    } else {
-        $dsrmPassword = ConvertTo-SecureString $config.Passwords.DSRM -AsPlainText -Force
-        Write-Host "Senha DSRM carregada da configuração" -ForegroundColor Green
-    }
-    
-    # Promover a Domain Controller
-    Write-Host "`nPromovendo servidor a Domain Controller..." -ForegroundColor Yellow
-    Write-Host "Este processo pode levar vários minutos..." -ForegroundColor Gray
-    
-    $logger.Info("Iniciando promoção a Domain Controller para: $($config.Domain.Name)")
-    
-    Import-Module ADDSDeployment -ErrorAction Stop
-    
-    Install-ADDSForest `
-        -DomainName $config.Domain.Name `
-        -DomainNetbiosName $config.Domain.NetBIOS `
-        -ForestMode $config.Advanced.ForestMode `
-        -DomainMode $config.Advanced.DomainMode `
-        -InstallDns:$true `
-        -SafeModeAdministratorPassword $dsrmPassword `
-        -Force:$true `
-        -NoRebootOnCompletion:$false
-    
-    $logger.Success("Domain Controller criado com sucesso")
-    Write-Host "Domain Controller criado com sucesso" -ForegroundColor Green
-    $state.MarkADPromoted()
-    $state.SetPhase(3)
     
 } catch {
     $logger.Error("Erro na Fase 3: $_")
     Write-Host "Erro: $_" -ForegroundColor Red
     exit 1
 }
-
 # =====================================================
 # FINALIZAÇÃO
 # =====================================================
