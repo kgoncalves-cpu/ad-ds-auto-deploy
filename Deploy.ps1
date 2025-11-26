@@ -80,32 +80,55 @@ try {
 }
 
 # =====================================================
-# CRIAR LOGGER E STATE MANAGER
+# CRIAR LOGGER E STATE MANAGER (MELHORADO)
 # =====================================================
 
-$logPath = "$PSScriptRoot\Logs\ADDeployment_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
-$statePath = "$PSScriptRoot\Logs\ADDeployment.state"
+$logsDir = "$PSScriptRoot\Logs"
+if (-not (Test-Path $logsDir)) {
+    New-Item -ItemType Directory -Path $logsDir -Force | Out-Null
+}
+
+$statePath = "$logsDir\ADDeployment.state"
+
+# Carregue o estado ANTES de criar o logger
+$state = [DeploymentState]::new($statePath)
+$currentPhase = $state.GetPhase()
+
+# ✅ Nome do log com fase (compatível com PS 5.0)
+$phaseLabels = @{
+    0 = "Phase0-Init"
+    1 = "Phase1-Validation"
+    2 = "Phase2-Setup"
+    3 = "Phase3-Install"
+    4 = "Phase4-PostConfig"
+}
+
+# ✅ Alternativa ao ?? (não existe em PS 5.0)
+if ($phaseLabels.ContainsKey($currentPhase)) {
+    $phaseLabel = $phaseLabels[$currentPhase]
+} else {
+    $phaseLabel = "Phase$currentPhase"
+}
+
+$logPath = "$logsDir\ADDeployment_$phaseLabel`_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 
 try {
     $logger = [ADLogger]::new($logPath, $true, $true)
     $logger.Info("═══════════════════════════════════════════════════════════")
     $logger.Info("DEPLOYMENT DE ACTIVE DIRECTORY - VERSÃO 2.2 CORRIGIDA")
-    $logger.Info("Modo: $Mode | AutoContinue: $autoContinueStatus")
+    $logger.Info("Fase: $currentPhase ($phaseLabel) | AutoContinue: $autoContinueStatus")
     $logger.Info("═══════════════════════════════════════════════════════════")
-    Write-Host "Logger inicializado" -ForegroundColor Green
+    Write-Host "Logger inicializado: $phaseLabel" -ForegroundColor Green
 } catch {
     Write-Host "Erro ao criar logger: $_" -ForegroundColor Red
     exit 1
 }
 
-# Carregar estado
-$state = [DeploymentState]::new($statePath)
-$currentPhase = $state.GetPhase()
-
+# Carregar estado (já foi carregado acima, mas aparece no output)
 if ($currentPhase -gt 0) {
     Write-Host "`nEstado anterior detectado:" -ForegroundColor Yellow
-    Write-Host "Fase atual: $currentPhase" -ForegroundColor Gray
-    $logger.Info("Estado anterior carregado - Fase: $currentPhase")
+    Write-Host "Fase atual: $currentPhase ($phaseLabel)" -ForegroundColor Gray
+    $logger.Info("Estado anterior carregado - Fase: $currentPhase ($phaseLabel)")
 }
 
 # =====================================================
@@ -324,40 +347,54 @@ Start-Sleep -Seconds 2
 # FASE 2: PREPARAÇÃO DO SERVIDOR
 # =====================================================
 
-try {
-    $setupResult = Invoke-ADServerSetup -Config $config `
-                                       -Logger $logger `
-                                       -State $state `
-                                       -EffectiveMode $effectiveMode
-    
-    if (-not $setupResult.Success) {
-        throw $setupResult.Message
+# ✅ VERIFICAR se já foi executada
+if ($currentPhase -lt 2) {
+    try {
+        $setupResult = Invoke-ADServerSetup -Config $config `
+                                           -Logger $logger `
+                                           -State $state `
+                                           -EffectiveMode $effectiveMode
+        
+        if (-not $setupResult.Success) {
+            throw $setupResult.Message
+        }
+        
+    } catch {
+        $logger.Error("Erro na Fase 2: $_")
+        Write-Host "Erro: $_" -ForegroundColor Red
+        exit 1
     }
-    
-} catch {
-    $logger.Error("Erro na Fase 2: $_")
-    Write-Host "Erro: $_" -ForegroundColor Red
-    exit 1
+} else {
+    Write-Host "`n[INFO] Fase 2 já foi executada anteriormente" -ForegroundColor Gray
+    $logger.Info("Fase 2 já foi executada - pulando")
 }
+
 # =====================================================
 # FASE 3: INSTALAÇÃO DO ACTIVE DIRECTORY
 # =====================================================
 
-try {
-    $installResult = Invoke-ADInstallation -Config $config `
-                                          -Logger $logger `
-                                          -State $state `
-                                          -EffectiveMode $effectiveMode
-    
-    if (-not $installResult.Success) {
-        throw $installResult.Message
+# ✅ VERIFICAR se já foi executada
+if ($currentPhase -lt 3) {
+    try {
+        $installResult = Invoke-ADInstallation -Config $config `
+                                              -Logger $logger `
+                                              -State $state `
+                                              -EffectiveMode $effectiveMode
+        
+        if (-not $installResult.Success) {
+            throw $installResult.Message
+        }
+        
+    } catch {
+        $logger.Error("Erro na Fase 3: $_")
+        Write-Host "Erro: $_" -ForegroundColor Red
+        exit 1
     }
-    
-} catch {
-    $logger.Error("Erro na Fase 3: $_")
-    Write-Host "Erro: $_" -ForegroundColor Red
-    exit 1
+} else {
+    Write-Host "`n[INFO] Fase 3 já foi executada anteriormente" -ForegroundColor Gray
+    $logger.Info("Fase 3 já foi executada - pulando")
 }
+
 # =====================================================
 # FINALIZAÇÃO
 # =====================================================
