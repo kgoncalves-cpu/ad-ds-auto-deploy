@@ -46,6 +46,7 @@ try {
 
 try {
     . "$PSScriptRoot\Functions\Validation.ps1" -ErrorAction Stop
+    # implementar com ADDeployment.Validação.psm1 futuramente
     Write-Host "Validation.ps1 carregado" -ForegroundColor Green
 } catch {
     Write-Host "Erro ao carregar Validation.ps1: $_" -ForegroundColor Red
