@@ -204,7 +204,7 @@ function Get-ADDSRMPassword {
 }
 
 # =====================================================
-# FUNÇÃO: Promover a Domain Controller (CORRIGIDA)
+# FUNÇÃO: Promover a Domain Controller (CORRIGIDA v2)
 # =====================================================
 
 function Invoke-ADDSForestPromotion {
@@ -264,15 +264,29 @@ function Invoke-ADDSForestPromotion {
         # ✅ EXECUTAR INSTALL-ADDSFOREST COM PARÂMETROS CORRETOS
         Write-Host "Executando Install-ADDSForest..." -ForegroundColor Gray
         
-        Install-ADDSForest `
-            -DomainName $Config.Domain.Name `
-            -DomainNetbiosName $Config.Domain.NetBIOS `
-            -ForestMode $forestModeValue `
-            -DomainMode $domainModeValue `
-            -InstallDns `
-            -SafeModeAdministratorPassword $DSRMPassword `
-            -Force `
-            -NoRebootOnCompletion:$false
+        # Usar hashtable para splatting (mais limpo e seguro)
+        $addsParams = @{
+            DomainName                 = $Config.Domain.Name
+            DomainNetbiosName          = $Config.Domain.NetBIOS
+            ForestMode                 = $forestModeValue
+            DomainMode                 = $domainModeValue
+            InstallDns                 = $true
+            SafeModeAdministratorPassword = $DSRMPassword
+            Force                      = $true
+            NoRebootOnCompletion       = $false
+        }
+        
+        Write-Host "Parâmetros do Install-ADDSForest:" -ForegroundColor Gray
+        foreach ($key in $addsParams.Keys) {
+            if ($key -eq "SafeModeAdministratorPassword") {
+                Write-Host "  $key : [SecureString]" -ForegroundColor Gray
+            } else {
+                Write-Host "  $key : $($addsParams[$key])" -ForegroundColor Gray
+            }
+        }
+        
+        # Executar com splatting
+        Install-ADDSForest @addsParams
         
         $Logger.Success("Domain Controller criado com sucesso")
         Write-Host "✅ Domain Controller criado com sucesso" -ForegroundColor Green

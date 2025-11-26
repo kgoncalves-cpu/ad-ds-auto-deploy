@@ -5,11 +5,11 @@
     Fornece validadores e funções de verificação de configuração
 .NOTES
     Parte do ADDeployment Framework
-    Versão: 1.0
+    Versão: 1.1 - Corrigido conflito de classes
 #>
 
 # =====================================================
-# CLASSE: ADValidator (Moved from Validation.ps1)
+# CLASSE: ADValidator (ÚNICA REFERÊNCIA)
 # =====================================================
 
 class ADValidator {
@@ -333,7 +333,7 @@ function Test-ADIPInSegment {
     .PARAMETER Logger
         Objeto logger para registrar operações
     .EXAMPLE
-        Test-ADIPInSegment -IPAddress "172.22.149.244" -NetworkAddress "172.22.144.0" -CIDR 20 -Logger $logger
+        Test-ADIPInSegment -IPAddress "192.168.192.103" -NetworkAddress "192.168.192.0" -CIDR 20 -Logger $logger
     .OUTPUTS
         [bool] $true se IP está na rede, $false caso contrário
     #>

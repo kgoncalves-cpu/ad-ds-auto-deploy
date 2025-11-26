@@ -31,7 +31,7 @@ Write-Host "║  Parte 2 - Após Domain Controller                          ║"
 Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 
 # =====================================================
-# CARREGAR FUNÇÕES
+# CARREGAR FUNÇÕES (DOTTED SOURCING)
 # =====================================================
 
 Write-Host "`nCarregando funções..." -ForegroundColor Yellow
@@ -44,20 +44,25 @@ try {
     exit 1
 }
 
-try {
-    . "$PSScriptRoot\Functions\Validation.ps1" -ErrorAction Stop
-    # implementar com ADDeployment.Validação.psm1 futuramente
-    Write-Host "Validation.ps1 carregado" -ForegroundColor Green
-} catch {
-    Write-Host "Erro ao carregar Validation.ps1: $_" -ForegroundColor Red
-    exit 1
-}
+# ⚠️ REMOVER ESTE BLOCO - Validation.ps1 está deprecado
+# try {
+#     . "$PSScriptRoot\Functions\Validation.ps1" -ErrorAction Stop
+#     Write-Host "Validation.ps1 carregado" -ForegroundColor Green
+# } catch {
+#     Write-Host "Erro ao carregar Validation.ps1: $_" -ForegroundColor Red
+#     exit 1
+# }
 
 # =====================================================
 # CRIAR LOGGER
 # =====================================================
 
-$logPath = "$PSScriptRoot\Logs\ADDeployment_Part2_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+$logsDir = "$PSScriptRoot\Logs"
+if (-not (Test-Path $logsDir)) {
+    New-Item -ItemType Directory -Path $logsDir -Force | Out-Null
+}
+
+$logPath = "$logsDir\ADDeployment_Part2_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 
 try {
     $logger = [ADLogger]::new($logPath, $true, $true)
@@ -72,6 +77,34 @@ try {
 }
 
 # =====================================================
+# CARREGAR MÓDULOS (NOVO)
+# =====================================================
+
+Write-Host "`nCarregando módulos..." -ForegroundColor Yellow
+
+# ✅ Carregar ADDeployment.Validate para ADValidator estar disponível
+try {
+    Import-Module "$PSScriptRoot\Modules\ADDeployment.Validate.psm1" -ErrorAction Stop
+    Write-Host "ADDeployment.Validate carregado" -ForegroundColor Green
+    $logger.Info("ADDeployment.Validate carregado com sucesso")
+} catch {
+    Write-Host "Erro ao carregar ADDeployment.Validate: $_" -ForegroundColor Red
+    $logger.Error("Erro ao carregar ADDeployment.Validate: $_")
+    exit 1
+}
+
+# ✅ Carregar ADDeployment.Config para funções de configuração
+try {
+    Import-Module "$PSScriptRoot\Modules\ADDeployment.Config.psm1" -ErrorAction Stop
+    Write-Host "ADDeployment.Config carregado" -ForegroundColor Green
+    $logger.Info("ADDeployment.Config carregado com sucesso")
+} catch {
+    Write-Host "Erro ao carregar ADDeployment.Config: $_" -ForegroundColor Red
+    $logger.Error("Erro ao carregar ADDeployment.Config: $_")
+    exit 1
+}
+
+# =====================================================
 # CARREGAR CONFIGURAÇÃO
 # =====================================================
 
@@ -82,7 +115,9 @@ try {
         throw "Arquivo de configuração não encontrado: $ConfigFile"
     }
     
-    $config = Import-PowerShellDataFile -Path $ConfigFile
+    # ✅ Usar função do módulo ADDeployment.Config
+    $config = Import-ADConfig -ConfigFile $ConfigFile -Logger $logger
+    
     $logger.Success("Configuração carregada: $ConfigFile")
     Write-Host "Configuração carregada com sucesso" -ForegroundColor Green
 } catch {
@@ -283,6 +318,7 @@ try {
     
     foreach ($user in $config.Users) {
         try {
+            # ✅ AGORA ADValidator está disponível (carregado via Import-Module)
             $username = [ADValidator]::GenerateUsername($user.FirstName, $user.LastName, $config.Naming.UserNameFormat)
             
             New-ADUser `
