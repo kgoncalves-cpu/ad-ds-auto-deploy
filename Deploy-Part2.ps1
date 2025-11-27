@@ -196,3 +196,6 @@ Write-Host "4. Configurar replicação adicional se houver mais DCs" -Foreground
 Write-Host "`nLogs: $logPath" -ForegroundColor Gray
 
 Read-Host "`nPressione ENTER para finalizar"
+
+
+# TODO: REMOVER TAREFAS AGENDADAS
