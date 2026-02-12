@@ -1,0 +1,15 @@
+name: Teste de Script PowerShell
+on: [push, pull_request]
+
+jobs:
+  test-ps:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Rodar Script de Teste
+        shell: pwsh # Usa PowerShell Core (recomendado)
+        run: |
+          ./meu-script.ps1 -Parametro "Valor"
+          Write-Host "Teste concluído com sucesso!"
