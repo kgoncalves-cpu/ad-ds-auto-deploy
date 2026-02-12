@@ -14,6 +14,9 @@
 .PARAMETER AutoContinue
     Ativar continuação automática após reboot (padrão: $false)
     
+.PARAMETER SkipPart2
+    Pular execução automática de Deploy-Part2.ps1 (padrão: $false)
+    
 .EXAMPLE
     # Para execução PADRÃO (com prompts, reboots manuais)
     .\Deploy.ps1 -ConfigFile .\Config\Default.psd1 -AutoContinue
@@ -26,14 +29,15 @@
     
 .NOTES
     Autor: BRMC IT Team
-    Versão: 2.2 com Correção de CIDR
+    Versão: 2.3 com Automação de Part2
     Requer: Windows Server 2022
 #>
 
 param(
     [string]$ConfigFile = "$PSScriptRoot\Config\Default.psd1",
     [string]$Mode = "Interactive",
-    [switch]$AutoContinue
+    [switch]$AutoContinue,
+    [switch]$SkipPart2
 )
 
 # =====================================================
@@ -47,7 +51,7 @@ $ProgressPreference = "SilentlyContinue"
 $autoContinueStatus = if ($AutoContinue) { 'Ativo' } else { 'Inativo' }
 
 Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║  DEPLOYMENT DE ACTIVE DIRECTORY - VERSÃO 2.2 CORRIGIDA     ║" -ForegroundColor Cyan
+Write-Host "║  DEPLOYMENT DE ACTIVE DIRECTORY - VERSÃO 2.3 REFATORADA    ║" -ForegroundColor Cyan
 Write-Host "║  Modo: $Mode | AutoContinue: $autoContinueStatus           ║" -ForegroundColor Cyan
 Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 
@@ -115,7 +119,7 @@ $logPath = "$logsDir\ADDeployment_$phaseLabel`_$(Get-Date -Format 'yyyyMMdd_HHmm
 try {
     $logger = [ADLogger]::new($logPath, $true, $true)
     $logger.Info("═══════════════════════════════════════════════════════════")
-    $logger.Info("DEPLOYMENT DE ACTIVE DIRECTORY - VERSÃO 2.2 CORRIGIDA")
+    $logger.Info("DEPLOYMENT DE ACTIVE DIRECTORY - VERSÃO 2.3 REFATORADA")
     $logger.Info("Fase: $currentPhase ($phaseLabel) | AutoContinue: $autoContinueStatus")
     $logger.Info("═══════════════════════════════════════════════════════════")
     Write-Host "Logger inicializado: $phaseLabel" -ForegroundColor Green
@@ -396,7 +400,66 @@ if ($currentPhase -lt 3) {
 }
 
 # =====================================================
-# FINALIZAÇÃO
+# VERIFICAR SE TODAS AS FASES ANTERIORES COMPLETARAM
+# =====================================================
+
+if ($currentPhase -ge 3 -and -not $SkipPart2) {
+    Write-Host "`n" + ("=" * 64) -ForegroundColor Green
+    Write-Host "✅ TODAS AS FASES ANTERIORES COMPLETADAS" -ForegroundColor Green
+    Write-Host ("=" * 64) -ForegroundColor Green
+    
+    $logger.Info("═══════════════════════════════════════════════════════════")
+    $logger.Info("Todas as fases anteriores (1-3) foram completadas")
+    $logger.Info("Iniciando Deploy-Part2.ps1 automaticamente...")
+    $logger.Info("═══════════════════════════════════════════════════════════")
+    
+    # Limpar tarefa agendada (não será mais necessária)
+    try {
+        Write-Host "`nLimpando tarefa agendada..." -ForegroundColor Yellow
+        $taskName = "ADDeployment-AutoContinue"
+        $taskPath = "\ADDeployment\"
+        
+        $task = Get-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction SilentlyContinue
+        if ($null -ne $task) {
+            Unregister-ScheduledTask -TaskName $taskName -TaskPath $taskPath -Confirm:$false -ErrorAction SilentlyContinue
+            $logger.Info("Tarefa agendada removida com sucesso")
+            Write-Host "✅ Tarefa agendada removida" -ForegroundColor Green
+        }
+    } catch {
+        $logger.Warning("Erro ao remover tarefa agendada: $_")
+    }
+    
+    # Executar Deploy-Part2.ps1
+    try {
+        Write-Host "`nExecutando Deploy-Part2.ps1..." -ForegroundColor Yellow
+        Write-Host "Aguarde 30 segundos para o serviço AD estabilizar..." -ForegroundColor Gray
+        Start-Sleep -Seconds 30
+        
+        $part2Path = Join-Path -Path $PSScriptRoot -ChildPath "Deploy-Part2.ps1"
+        
+        if (-not (Test-Path $part2Path)) {
+            throw "Arquivo Deploy-Part2.ps1 não encontrado em: $part2Path"
+        }
+        
+        $logger.Info("Iniciando Deploy-Part2.ps1 com ConfigFile: $ConfigFile")
+        
+        # Executar Part2 no mesmo processo
+        & $part2Path -ConfigFile $ConfigFile
+        
+        $logger.Success("Deploy-Part2.ps1 concluído com sucesso")
+        Write-Host "`n✅ Deploy-Part2.ps1 concluído com sucesso" -ForegroundColor Green
+        
+    } catch {
+        $logger.Error("Erro ao executar Deploy-Part2.ps1: $_")
+        Write-Host "`n❌ Erro ao executar Deploy-Part2.ps1: $_" -ForegroundColor Red
+        Write-Host "`nExecute manualmente: .\Deploy-Part2.ps1 -ConfigFile $ConfigFile" -ForegroundColor Yellow
+    }
+    
+    exit 0
+}
+
+# =====================================================
+# FINALIZAÇÃO (Se Part2 não foi executado)
 # =====================================================
 
 Write-Host "`n" + ("=" * 64) -ForegroundColor Cyan
@@ -408,6 +471,7 @@ $logger.Info("Fases 1-3 concluídas com sucesso")
 $logger.Info("Execute Deploy-Part2.ps1 após o reboot")
 $logger.Info("═══════════════════════════════════════════════════════════")
 
+# TODO: Incluir execução do Deploy-Part2.ps1 no processo automatizado.
 Write-Host "`nO servidor será reiniciado automaticamente" -ForegroundColor Yellow
 Write-Host "`nApós a reinicialização:" -ForegroundColor White
 Write-Host "1. Aguarde 10 minutos para os serviços do AD iniciarem" -ForegroundColor Gray
