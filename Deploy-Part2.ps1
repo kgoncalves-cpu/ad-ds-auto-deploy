@@ -139,7 +139,7 @@ Write-Host "IP: $($config.Network.ServerIP)" -ForegroundColor Gray
 
 Write-Host "`nAguardando serviços do Active Directory..." -ForegroundColor Yellow
 $logger.Info("Aguardando serviços do AD iniciarem")
-Start-Sleep -Seconds 30
+Start-Sleep -Seconds 60
 Write-Host "Serviços do AD prontos" -ForegroundColor Green
 
 # =====================================================

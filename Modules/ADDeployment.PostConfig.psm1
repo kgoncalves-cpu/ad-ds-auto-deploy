@@ -8,6 +8,11 @@
     Versão: 1.0
     Requer: Windows Server 2022 com AD DS instalado
 #>
+# =====================================================
+# IMPORTAR DEPENDÊNCIAS
+# =====================================================
+
+Import-Module -Name "$PSScriptRoot\ADDeployment.Validate.psm1" -ErrorAction Stop
 
 # =====================================================
 # FUNÇÃO: Configurar DNS
