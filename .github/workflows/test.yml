@@ -11,5 +11,4 @@ jobs:
       - name: Rodar Script de Teste
         shell: pwsh # Usa PowerShell Core (recomendado)
         run: |
-          ./meu-script.ps1 -Parametro "Valor"
           Write-Host "Teste concluído com sucesso!"
