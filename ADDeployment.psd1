@@ -72,8 +72,8 @@
                 'Infrastructure'
             )
             
-            LicenseUri = 'https://github.com/BLUTEK-Tecnologias-de-Informacao/ps-ad-ds-auto-in/blob/main/LICENSE'
-            ProjectUri = 'https://github.com/BLUTEK-Tecnologias-de-Informacao/ps-ad-ds-auto-in'
+            LicenseUri = 'https://github.com/kgoncalves-cpu/ad-ds-auto-deploy/blob/master/LICENSE'
+            ProjectUri = 'https://github.com/kgoncalves-cpu/ad-ds-auto-deploy'
             ReleaseNotes = 'See CHANGELOG.md'
             
             Prerelease = ''
@@ -82,5 +82,5 @@
     }
     
     # Requisitos de Plataforma
-    HelpInfoUri = 'https://github.com/BLUTEK-Tecnologias-de-Informacao/ps-ad-ds-auto-in/wiki'
+    HelpInfoUri = 'https://github.com/kgoncalves-cpu/ad-ds-auto-deploy/wiki'
 }
